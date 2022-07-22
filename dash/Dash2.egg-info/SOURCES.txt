@@ -1,0 +1,7 @@
+README.md
+setup.py
+Dash2.egg-info/PKG-INFO
+Dash2.egg-info/SOURCES.txt
+Dash2.egg-info/dependency_links.txt
+Dash2.egg-info/requires.txt
+Dash2.egg-info/top_level.txt
