@@ -1,7 +1,9 @@
-# Basic example of a DES agent, with filler actions that do not have any actual meaning or interfacing with an external
-# program. Built to get a better understanding of DASH and how to build more complex agents.
-# This example most likely won't run since this was copied directly from a separate repo without the semopy file, but
-# preserving here to be referenced if needed.
+"""
+Basic example of a DES agent, with filler actions that do not have any actual meaning or interfacing with an external
+program. Built to get a better understanding of DASH and how to build more complex agents.
+This example most likely won't run since this was copied directly from a separate repo without the semopy file, but
+preserving here to be referenced if needed.
+"""
 
 
 import sys

@@ -1,4 +1,11 @@
+"""
+Main implementation component of the Human-Cyber SWaT model and proof-of-concept for "Modeling Human-Cyber
+Interactions in Safety-Critical Cyber-Physical/Industrial Control Systems (CPS/ICS)" as part of USC ISI REU 2022;
+this is the CPS operator side of the implementation.
+"""
+
 import sys; sys.path.extend(['../../'])
+
 from Dash2.core.dash_agent import DASHAgent
 from Dash2.core.system2 import isVar
 from Dash2.core.string_aux import convert_camel
@@ -6,14 +13,22 @@ from Dash2.core.system2 import System2Agent, substitute
 from Dash2.core.system1 import System1Agent
 from Dash2.core.client import Client
 from Dash2.core.human_traits import HumanTraits
-import argparse
 
+import argparse
+import zmq
 
 
 class OperatorDashAction(Client, System1Agent, System2Agent):
     """
-    Created a "custom" DashAction class but is copied directly from Dash2/core/dash_action.py so that we can add 'print'
-    statements and take a closer look at what's going on as we're learning how to use DASH and create a custom DASH agent.
+    Created a "custom" DashAction class copied directly from Dash2/core/dash_action.py so that we can add 'print'
+    statements and take a closer look at what's going on as we're learning how to use DASH and create a custom
+    DASH agent.
+
+    Customized to work with the central operator hub connection using pyzmq, leveraging **kwargs, json/dictionaries,
+    etc.
+
+    TODO: Comment differences from original DASHAction and document control flow (e.g., how does a decision get
+     made and how are results tracked).
     """
     parameters = []  # Input parameters, each an instance of Parameter giving a name and info about the possible values
     measures = []  # Possible measures on the performance of the agent used for validation or as an outcome
@@ -23,8 +38,8 @@ class OperatorDashAction(Client, System1Agent, System2Agent):
         system2_class.__init__(self)
         system1_class.__init__(self)
 
-        self.traceUpdate = False
-        self.traceAction = False
+        self.traceUpdate = True
+        self.traceAction = True
         self.traceLoop = True
         # Although 'forget' is defined in system2, it is assigned primitive here because that module is compiled first
         self.primitiveActions([('forget', self.forget), ['sleep', self.sleep]])
@@ -38,10 +53,10 @@ class OperatorDashAction(Client, System1Agent, System2Agent):
     # This is in the java part in the old agent
     #
     def agent_loop(self, max_iterations=-1, disconnect_at_end=True, **kwargs):
-        next_action = self.agent_decision_cycle(next_action=None)
+        next_action = self.agent_decision_cycle(next_action=None, **kwargs)
         iteration = 0
         while next_action is not None and (max_iterations < 0 or iteration < max_iterations):
-            next_action = self.agent_decision_cycle(next_action=next_action)
+            next_action = self.agent_decision_cycle(next_action=next_action, **kwargs)
             iteration += 1
         if self.traceLoop and next_action is None:
             print("Exiting simulation: no action chosen")
@@ -61,9 +76,9 @@ class OperatorDashAction(Client, System1Agent, System2Agent):
                 self.system1_update()
                 next_action = self.choose_action()
             else:
-                if self.traceAction:
-                    print(self.id, "next action is", next_action)
-                result = self.perform_action(next_action)
+                # if self.traceAction:
+                print(self.id, "next action is", next_action)
+                result = self.perform_action(next_action, **kwargs)
                 self.update_beliefs(result, next_action)
                 # self.spreading_activation()
                 self.system1_update()
@@ -76,7 +91,7 @@ class OperatorDashAction(Client, System1Agent, System2Agent):
             next_action = self.choose_action()
             if self.traceAction:
                 print(self.id, "next action is", next_action)
-            result = self.perform_action(next_action)
+            result = self.perform_action(next_action, **kwargs)
             self.update_beliefs(result, next_action)
             # self.spreading_activation()
             self.system1_update()
@@ -91,7 +106,8 @@ class OperatorDashAction(Client, System1Agent, System2Agent):
             return system1_actions[0]  # will ultimately choose
         system2_action = self.system2_propose_action()
         # For now always go with the result of reasoning if it was performed
-        return self.arbitrate_system1_system2(system1_actions, system2_action)
+        chosen_action = self.arbitrate_system1_system2(system1_actions, system2_action)
+        return chosen_action
 
     # Given that system 2 was not bypassed, choose between the action it suggests and any actions
     # suggested by system 1
@@ -117,7 +133,7 @@ class OperatorDashAction(Client, System1Agent, System2Agent):
                 self.primitiveActionDict[item[0]] = item[1]
 
     # This format is now inefficient since we have different ways that a predicate can be a primitive action
-    def perform_action(self, action):
+    def perform_action(self, action, **kwargs):
         if self.isPrimitive(action):
             predicate = action[0]
             if predicate in self.primitiveActionDict:
@@ -130,24 +146,21 @@ class OperatorDashAction(Client, System1Agent, System2Agent):
                     function = getattr(self, underscore_action)
                 else:
                     return
-            return function(action)
+            return function(**kwargs)
 
     def update_beliefs(self, result, action):
-        if self.traceUpdate:
-            print("Updating beliefs based on action", action, "with result", result)
+        print("Updating beliefs based on action", action, "with result", result)
         if result == 'TryAgain':
             return  # in some cases, want the side effects to happen and then re-try the same goal.
         elif not result and not self.isTransient(action):
-            if self.traceUpdate:
-                print("Adding known false", action)
+            print("Adding known false", action)
             self.knownFalseTuple(action)
             self.add_activation(action, 0.3)  # smaller bump for a failed action
         if isinstance(result, list):
             for bindings in result:
                 concrete_result = substitute(action, bindings)
                 if not self.isTransient(concrete_result):
-                    if self.traceUpdate:
-                        print("Adding known true and performed", concrete_result)
+                    print("Adding known true and performed", concrete_result)
                     self.knownTuple(concrete_result)  # Mark action as performed/known
                     self.knownTuple(
                         ('performed', concrete_result))  # Adding both lets both idioms be used in the agent code.
@@ -191,21 +204,43 @@ class CPSOperator(OperatorDASHAgent):
     def __init__(self):
         OperatorDASHAgent.__init__(self)
 
+        # TODO: Agent only checks for alerts once currently and then does some 'known' action. Need to add more
+        #  actions; have it pick between checking for alerts or performing a sensor read, or some default wait?
+        #  Need to check how the 'goalRequirements' and 'goalWeight' works.
         self.readAgent("""
 goalWeight doWork 1
 
 goalRequirements doWork
-  checkForAlerts(system_info)
-  forget([checkForAlerts(x)])
+  checkForAlerts(hub_connection)
                        """)
 
+    # Operator checks for any alerts from the water treatment plant, signifying that there is something that urgent
+    # that needs to be addressed. Operator sends a json to the hub saying that it is checking for alerts and waits
+    # for a response.
+    def check_for_alerts(self, **kwargs):
+        socket = kwargs.get('hub_connection', None)
+        alerts = []
+        print("\tChecking for alerts from the water treatment testbed...")
+        socket.send_json(obj={"check_alerts": True})
 
-    def check_for_alerts(self, sys_info):
-        alert_status = False
-        print("Checking alert status... " + str(alert_status))
-        return True
+        response = socket.recv_json()["res"]
+
+        return [{"alerts": response["alerts_exist"]}]
+
+
+def main():
+    # Adapted from https://zeromq.org/languages/python/, binds REP socket to tcp://*:5555; setting up client connection
+    # to cps_operator_hub.py, assuming it's already active.
+    context = zmq.Context()
+
+    # Socket to talk to server/hub
+    print("Connecting to cps_operator_hub.py...")
+    socket = context.socket(zmq.REQ)
+    socket.connect("tcp://localhost:5555")
+
+    test_agent = CPSOperator()
+    test_agent.agent_loop(max_iterations=10, hub_connection=socket)
 
 
 if __name__ == "__main__":
-    test_agent = CPSOperator()
-    test_agent.agent_loop(max_iterations=10)
+    main()
