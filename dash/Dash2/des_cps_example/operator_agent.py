@@ -1,3 +1,9 @@
+# Basic example of a DES agent, with filler actions that do not have any actual meaning or interfacing with an external
+# program. Built to get a better understanding of DASH and how to build more complex agents.
+# This example most likely won't run since this was copied directly from a separate repo without the semopy file, but
+# preserving here to be referenced if needed.
+
+
 import sys
 sys.path.extend(['../../']) # need to have 'webdash' directory in $PYTHONPATH, if we want to run script (as "__main__")
 
@@ -14,6 +20,10 @@ data = political_democracy.get_data()
 
 
 class CPSOperatorAgent(DESAgent):
+"""
+Simple DESAgent implementation of a cyber-physical system human operator agent, no meaningful interactions with an
+external simulator or decision-making, just randomization. Meant to test the discrete event functionality of DASH.
+"""
 
     def __init__(self, **kwargs):
         DESAgent.__init__(self, **kwargs)
@@ -48,8 +58,5 @@ class CPSOperatorAgent(DESAgent):
 
 
 if __name__ == "__main__":
-    # test_agent = DESAgent()
-    # test_agent.agent_loop(max_iterations=10, agent_data={})
-
     cps_operator1 = CPSOperatorAgent()
     cps_operator1.agent_loop(max_iterations=10, agent_data={})
