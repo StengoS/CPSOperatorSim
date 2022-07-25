@@ -53,10 +53,10 @@ class OperatorDashAction(Client, System1Agent, System2Agent):
     # This is in the java part in the old agent
     #
     def agent_loop(self, max_iterations=-1, disconnect_at_end=True, **kwargs):
-        next_action = self.agent_decision_cycle(next_action=None, **kwargs)
+        next_action = self.agent_decision_cycle(next_action=None)
         iteration = 0
         while next_action is not None and (max_iterations < 0 or iteration < max_iterations):
-            next_action = self.agent_decision_cycle(next_action=next_action, **kwargs)
+            next_action = self.agent_decision_cycle(next_action=next_action)
             iteration += 1
         if self.traceLoop and next_action is None:
             print("Exiting simulation: no action chosen")
@@ -78,7 +78,7 @@ class OperatorDashAction(Client, System1Agent, System2Agent):
             else:
                 # if self.traceAction:
                 print(self.id, "next action is", next_action)
-                result = self.perform_action(next_action, **kwargs)
+                result = self.perform_action(next_action)
                 self.update_beliefs(result, next_action)
                 # self.spreading_activation()
                 self.system1_update()
@@ -91,7 +91,7 @@ class OperatorDashAction(Client, System1Agent, System2Agent):
             next_action = self.choose_action()
             if self.traceAction:
                 print(self.id, "next action is", next_action)
-            result = self.perform_action(next_action, **kwargs)
+            result = self.perform_action(next_action)
             self.update_beliefs(result, next_action)
             # self.spreading_activation()
             self.system1_update()
@@ -133,7 +133,7 @@ class OperatorDashAction(Client, System1Agent, System2Agent):
                 self.primitiveActionDict[item[0]] = item[1]
 
     # This format is now inefficient since we have different ways that a predicate can be a primitive action
-    def perform_action(self, action, **kwargs):
+    def perform_action(self, action):
         if self.isPrimitive(action):
             predicate = action[0]
             if predicate in self.primitiveActionDict:
@@ -146,7 +146,7 @@ class OperatorDashAction(Client, System1Agent, System2Agent):
                     function = getattr(self, underscore_action)
                 else:
                     return
-            return function(**kwargs)
+            return function(action)
 
     def update_beliefs(self, result, action):
         print("Updating beliefs based on action", action, "with result", result)
@@ -201,29 +201,32 @@ class CPSOperator(OperatorDASHAgent):
     Design's Secure Water Treatment (SWaT).
     """
 
-    def __init__(self):
+    def __init__(self, socket):
         OperatorDASHAgent.__init__(self)
 
-        # TODO: Agent only checks for alerts once currently and then does some 'known' action. Need to add more
-        #  actions; have it pick between checking for alerts or performing a sensor read, or some default wait?
-        #  Need to check how the 'goalRequirements' and 'goalWeight' works.
+        # TODO: Add more possible actions, configure so that based on results of alert.
         self.readAgent("""
 goalWeight doWork 1
 
 goalRequirements doWork
-  checkForAlerts(hub_connection)
+  checkForAlerts(alert)
+  forget([checkForAlerts(x)])
+  
+transient doWork
                        """)
+
+        self.hub_connection = socket
 
     # Operator checks for any alerts from the water treatment plant, signifying that there is something that urgent
     # that needs to be addressed. Operator sends a json to the hub saying that it is checking for alerts and waits
     # for a response.
-    def check_for_alerts(self, **kwargs):
-        socket = kwargs.get('hub_connection', None)
+    def check_for_alerts(self, goal):
+        print(goal)
         alerts = []
         print("\tChecking for alerts from the water treatment testbed...")
-        socket.send_json(obj={"check_alerts": True})
+        self.hub_connection.send_json(obj={"check_alerts": True})
 
-        response = socket.recv_json()["res"]
+        response = self.hub_connection.recv_json()["res"]
 
         return [{"alerts": response["alerts_exist"]}]
 
@@ -238,8 +241,8 @@ def main():
     socket = context.socket(zmq.REQ)
     socket.connect("tcp://localhost:5555")
 
-    test_agent = CPSOperator()
-    test_agent.agent_loop(max_iterations=10, hub_connection=socket)
+    test_agent = CPSOperator(socket)
+    test_agent.agent_loop(max_iterations=10)
 
 
 if __name__ == "__main__":
