@@ -1,18 +1,25 @@
-Main file with implementation is in Dash2/cyber_physical_operator. Documentation
+Main files with implementation is in Dash2/cyber_physical_operator. Documentation
 and steps on how to run in-progress. You should be running Python3.
 
-To sanity check that the CPS human operator works along with the hub, 
-run the following in two separate terminals. Terminal 1 should be done first.
+Everything is meant to be run alongside a working simulator of SWaT through MiniCPS/MiniVM.
+
+# Set-Up Steps
+## Installing MiniCPS/MiniVM
+1. 
+
+## Running Everything
+Note that you have to start python programs in this exact order for the processes to communicate
+as intended.
 ```
 TERMINAL 1
-$ cd Dash2/cyber_physical_operator/
-$ python cps_operator_hub.py
+$ cd minicps/examples/swat-s1
+$ sudo python2 custom_physical_process.py
 
 TERMINAL 2
-$ cd Dash2/cyber_physical_operator/
-$ python cps_operator_agent.py
-```
-It should print out "Using custom OperatorDASHAgent..." and print out whatever
-actions it has chosen. 
+$ cd CPSOperatorSim/dash/Dash2/cyber_physical_operator
+$ python3 cps_operator_agent.py
 
-Note that you should be running Python3, version 3.8 at time of implementation.
+TERMINAL 3
+$ cd CPSOperatorSim/dash/Dash2/cyber_physical_operator
+$ python3 cps_operator_hub.py
+```

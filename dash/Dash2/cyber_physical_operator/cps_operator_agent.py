@@ -38,8 +38,9 @@ class OperatorDashAction(Client, System1Agent, System2Agent):
         system2_class.__init__(self)
         system1_class.__init__(self)
 
-        self.traceUpdate = True
-        self.traceAction = True
+        # TODO: Put back all the original traces.
+        self.traceUpdate = False
+        self.traceAction = False
         self.traceLoop = True
         # Although 'forget' is defined in system2, it is assigned primitive here because that module is compiled first
         self.primitiveActions([('forget', self.forget), ['sleep', self.sleep]])
@@ -76,8 +77,8 @@ class OperatorDashAction(Client, System1Agent, System2Agent):
                 self.system1_update()
                 next_action = self.choose_action()
             else:
-                # if self.traceAction:
-                print(self.id, "next action is", next_action)
+                if self.traceAction:
+                    print(self.id, "next action is", next_action)
                 result = self.perform_action(next_action)
                 self.update_beliefs(result, next_action)
                 # self.spreading_activation()
@@ -149,18 +150,18 @@ class OperatorDashAction(Client, System1Agent, System2Agent):
             return function(action)
 
     def update_beliefs(self, result, action):
-        print("Updating beliefs based on action", action, "with result", result)
+        # print("Updating beliefs based on action", action, "with result", result)
         if result == 'TryAgain':
             return  # in some cases, want the side effects to happen and then re-try the same goal.
         elif not result and not self.isTransient(action):
-            print("Adding known false", action)
+            # print("Adding known false", action)
             self.knownFalseTuple(action)
             self.add_activation(action, 0.3)  # smaller bump for a failed action
         if isinstance(result, list):
             for bindings in result:
                 concrete_result = substitute(action, bindings)
                 if not self.isTransient(concrete_result):
-                    print("Adding known true and performed", concrete_result)
+                    # print("Adding known true and performed", concrete_result)
                     self.knownTuple(concrete_result)  # Mark action as performed/known
                     self.knownTuple(
                         ('performed', concrete_result))  # Adding both lets both idioms be used in the agent code.
@@ -210,25 +211,85 @@ goalWeight doWork 1
 
 goalRequirements doWork
   checkForAlerts(alert)
-  forget([checkForAlerts(x)])
+  addressAlert(alert)
+  sleep(1)
+  forget([checkForAlerts(x), addressAlert(x), sleep(x)])
+
+goalRequirements doWork
+  checkTankWaterLevel(tanklevel)
+  forget([checkTankWaterLevel(x)])
   
 transient doWork
                        """)
 
         self.hub_connection = socket
 
+
     # Operator checks for any alerts from the water treatment plant, signifying that there is something that urgent
-    # that needs to be addressed. Operator sends a json to the hub saying that it is checking for alerts and waits
-    # for a response.
+    # that needs to be addressed. 
     def check_for_alerts(self, goal):
-        print(goal)
-        alerts = []
-        print("\tChecking for alerts from the water treatment testbed...")
-        self.hub_connection.send_json(obj={"check_alerts": True})
+        print("Checking for alerts from the water treatment testbed...")
 
-        response = self.hub_connection.recv_json()["res"]
+        res = {
+            "replier": "dash_agent"
+        }
 
-        return [{"alerts": response["alerts_exist"]}]
+        received_req = self.hub_connection.recv_json()
+        self.hub_connection.send_json(obj=res)
+        if len(received_req["alerts"]) == 0:
+            print("\tNo alerts reported.")
+
+            return []
+
+        else:
+            print("\tSome alerts reported.")
+
+            return [{}]
+
+    # If there is an active alert from the water treatment plant, operator then "addresses" it as necessary. For
+    # example, if the plant sends an alert that the water tank is at 'HH' level, operator needs to drain some water.
+    # TODO: Finish implementation.
+    def address_alert(self, goal):
+        print("Addressing some alert...")
+
+        received_req = self.hub_connection.recv_json()
+        print(received_req)
+
+        res = {
+            "replier": "dash_agent"
+        }
+        self.hub_connection.send_json(obj=res)
+
+        return [{}]
+    
+    # Operator checks the water level of the tank from the water treatment plant. 
+    def check_tank_water_level(self, goal):
+        print("Checking tank water level...")
+
+        received_req = self.hub_connection.recv_json()
+        print("\tWater tank level reported to be %g." % (received_req["tank_level"]))
+
+        res = {
+            "replier": "dash_agent"
+        }
+        self.hub_connection.send_json(obj=res)
+
+        return [{}]
+    
+    # Operator drains some water from the tank of the water treatment plant.
+    # TODO: Finish implementation.
+    def drain_tank(self, goal):
+        print("Draining water tank...")
+
+        received_req = self.hub_connection.recv_json()
+        print(received_req)
+
+        res = {
+            "replier": "dash_agent"
+        }
+        self.hub_connection.send_json(obj=res)
+
+        return [{}]
 
 
 def main():
@@ -238,11 +299,11 @@ def main():
 
     # Socket to talk to server/hub
     print("Connecting to cps_operator_hub.py...")
-    socket = context.socket(zmq.REQ)
-    socket.connect("tcp://localhost:5555")
+    socket = context.socket(zmq.REP)
+    socket.bind("tcp://*:5556")
 
     test_agent = CPSOperator(socket)
-    test_agent.agent_loop(max_iterations=10)
+    test_agent.agent_loop(max_iterations=100)
 
 
 if __name__ == "__main__":
